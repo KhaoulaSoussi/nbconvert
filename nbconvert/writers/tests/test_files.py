@@ -276,7 +276,7 @@ class Testfiles(TestsBase):
             with open(os.path.join('sub', 'c'), 'w') as f:
                 f.write('d')
 
-            # Create the resoruces dictionary
+            # Create the resources dictionary
             res = dict(metadata=dict(path="other_sub"))
 
             # Create files writer, test output

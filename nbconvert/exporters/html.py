@@ -98,6 +98,7 @@ class HTMLExporter(TemplateExporter):
     @property
     def default_config(self):
         c = Config({
+            'ExtractOutputPreprocessor': {'enabled': True},
             'NbConvertBase': {
                 'display_data_priority': [
                     'application/vnd.jupyter.widget-view+json',

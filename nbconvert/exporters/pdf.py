@@ -6,11 +6,14 @@
 import subprocess
 import os
 import sys
+import inspect
 
 import shutil
 from traitlets import Integer, List, Bool, Instance, Unicode, default
 from testpath.tempdir import TemporaryWorkingDirectory
 from typing import Optional
+
+import nbconvert
 from .latex import LatexExporter
 
 class LatexFailed(IOError):
@@ -163,11 +166,83 @@ class PDFExporter(LatexExporter):
             self.log.debug(u"%s output: %s\n%s", command[0], command, out)
 
         return self.run_command(self.bib_command, filename, 1, log_error, raise_on_failure)
-    
+
+    def get_next_num(self, idx, cell_range):
+        for i in range(idx, len(cell_range)):
+            char = cell_range[i]
+            if char == ',' or char == '-':
+                num = cell_range[idx:i]
+                return [i, int(num)]
+            if i == len(cell_range)-1:
+                num = cell_range[idx:i+1]
+                return [i, int(num)]
+
+    def construct_cell_range(self, cell_range):
+        wanted_cells = []
+        i = -1
+        while i+1 < len(cell_range):
+            i, num = self.get_next_num(i+1, cell_range)
+            if cell_range[i] == "-":
+                i, num2 = self.get_next_num(i+1, cell_range)
+                for x in range(num, num2+1):
+                    wanted_cells.append(x)
+            elif cell_range[i] == ',' or i == len(cell_range)-1:
+                wanted_cells.append(num)
+        return wanted_cells
+
+    def get_unwanted_cells(self, cell_range, total_cells):
+        unwanted_cells = []
+        i = -1
+        i, num = self.get_next_num(i+1, cell_range)
+        for x in range(1, num):
+            unwanted_cells.append(x)
+        while i+1 < len(cell_range):
+            if cell_range[i] == ",":
+                i, num2 = self.get_next_num(i+1, cell_range)
+                for x in range(num+1, num2):
+                    unwanted_cells.append(x)
+            if cell_range[i] == "-":
+                i, num = self.get_next_num(i+1, cell_range)
+        for x in range(num2+1, total_cells):
+            unwanted_cells.append(x)
+        return unwanted_cells
+
     def from_notebook_node(self, nb, resources=None, **kw):
+        # Set to false in case any of these options was set to true previously
+        nbconvert.TemplateExporter.exclude_output = False
+        nbconvert.TemplateExporter.exclude_input = False
+
+        if resources['conversion_options']['option'] == 'exclude_input':
+            nbconvert.TemplateExporter.exclude_input = True
+        elif resources['conversion_options']['option'] == 'exclude_output':
+            nbconvert.TemplateExporter.exclude_output = True
+
+        for idx, cell in enumerate(nb.cells):
+            if "remove_lines" in cell.metadata:
+                cell_code_lines = cell.source.split("\n")
+                line_numbers = cell.metadata.remove_lines
+                line_numbers = line_numbers
+                line_numbers = line_numbers[::-1]
+                self.log.info(line_numbers)
+                for line in line_numbers:
+                    self.log.info(line)
+                    self.log.info(len(cell_code_lines))
+                    cell_code_lines.pop(line-1)
+                nb.cells[idx].source = '\n'.join(cell_code_lines)
+
+        cell_range = resources['conversion_options']['cell_range']
+
+        if cell_range != "":
+            cell_range = self.construct_cell_range(cell_range)
+            # iterate from the end of the list to the beginning to avoid changing indexes of cells to be popped later
+            for idx in range(len(nb.cells)-1, -1, -1):
+                if idx+1 not in cell_range:
+                    nb.cells.pop(idx)
+
         latex, resources = super().from_notebook_node(
             nb, resources=resources, **kw
         )
+
         # set texinputs directory, so that local files will be found
         if resources and resources.get('metadata', {}).get('path'):
             self.texinputs = resources['metadata']['path']
@@ -178,8 +253,10 @@ class PDFExporter(LatexExporter):
         with TemporaryWorkingDirectory():
             notebook_name = 'notebook'
             resources['output_extension'] = '.tex'
+
             tex_file = self.writer.write(latex, resources, notebook_name=notebook_name)
             self.log.info("Building PDF")
+
             self.run_latex(tex_file)
             if self.run_bib(tex_file):
                 self.run_latex(tex_file)
