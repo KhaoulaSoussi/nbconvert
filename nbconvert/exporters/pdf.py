@@ -190,6 +190,7 @@ class PDFExporter(LatexExporter):
                 wanted_cells.append(num)
         return wanted_cells
 
+    # This function is unused, I kept it here in case it proves more optimal than the construct_cell_range function
     def get_unwanted_cells(self, cell_range, total_cells):
         unwanted_cells = []
         i = -1
@@ -211,11 +212,17 @@ class PDFExporter(LatexExporter):
         # Set to false in case any of these options was set to true previously
         nbconvert.TemplateExporter.exclude_output = False
         nbconvert.TemplateExporter.exclude_input = False
-
-        if resources['conversion_options']['option'] == 'exclude_input':
+        nbconvert.TemplateExporter.exclude_markdown = False
+        option = resources['conversion_options']['option']
+        self.log.info(option)
+        options = option.split(" ")
+        self.log.info(options)
+        if 'exclude_input' in options:
             nbconvert.TemplateExporter.exclude_input = True
-        elif resources['conversion_options']['option'] == 'exclude_output':
+        if 'exclude_output' in options:
             nbconvert.TemplateExporter.exclude_output = True
+        if 'exclude_markdown' in options:
+            nbconvert.TemplateExporter.exclude_markdown = True
 
         for idx, cell in enumerate(nb.cells):
             if "remove_lines" in cell.metadata:
@@ -223,10 +230,7 @@ class PDFExporter(LatexExporter):
                 line_numbers = cell.metadata.remove_lines
                 line_numbers = line_numbers
                 line_numbers = line_numbers[::-1]
-                self.log.info(line_numbers)
                 for line in line_numbers:
-                    self.log.info(line)
-                    self.log.info(len(cell_code_lines))
                     cell_code_lines.pop(line-1)
                 nb.cells[idx].source = '\n'.join(cell_code_lines)
 
